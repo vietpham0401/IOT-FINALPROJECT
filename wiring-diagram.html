@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sơ Đồ Lắp Ráp Trực Quan - ESP32-WROOM-38P + Đế Mở Rộng 38P</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --gnd: #64748b;
+      --vcc: #ef4444;
+      --sig: #f59e0b;
+      --sda: #38bdf8;
+      --scl: #a855f7;
+      --green: #10b981;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 20px;
+    }
+    .header {
+      max-width: 1280px;
+      margin: 0 auto 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      background: #111c33;
+      padding: 16px 24px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+    }
+    .header h1 { font-size: 20px; }
+    .header p { font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .filter-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .filter-btn {
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .filter-btn.active {
+      background: #2563eb;
+      border-color: #3b82f6;
+    }
+    .layout {
+      max-width: 1280px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr 390px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .col {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .device-card {
+      background: var(--card);
+      border: 2px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      transition: all 0.2s;
+    }
+    .device-card.highlight {
+      border-color: #38bdf8;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.2);
+    }
+    .device-card.dim {
+      opacity: 0.3;
+    }
+    .dev-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .dev-title h3 { font-size: 15px; color: #38bdf8; }
+    .badge {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 99px;
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      font-weight: 700;
+    }
+    .dev-note {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+    .pin-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .pin-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #0f172a;
+      padding: 7px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      border-left: 4px solid var(--sig);
+    }
+    .pin-row.gnd { border-left-color: #94a3b8; }
+    .pin-row.vcc { border-left-color: #ef4444; }
+    .pin-row.sda { border-left-color: #38bdf8; }
+    .pin-row.scl { border-left-color: #a855f7; }
+    .pin-row code {
+      font-family: Consolas, monospace;
+      font-weight: 700;
+      color: #fbbf24;
+    }
+
+    /* ĐẾ MỞ RỘNG ESP32 38P Ở GIỮA */
+    .shield-board {
+      background: #131c31;
+      border: 3px solid #475569;
+      border-radius: 18px;
+      padding: 18px;
+      position: relative;
+    }
+    .shield-header {
+      text-align: center;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px dashed #334155;
+    }
+    .shield-header h2 {
+      font-size: 16px;
+      color: #10b981;
+    }
+    .jumper-alert {
+      margin-top: 8px;
+      background: rgba(239, 68, 68, 0.16);
+      border: 1px solid #ef4444;
+      color: #fca5a5;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .gvs-legend {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      margin-bottom: 12px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .gvs-legend div {
+      padding: 6px;
+      border-radius: 6px;
+    }
+    .leg-g { background: #334155; color: #e2e8f0; }
+    .leg-v { background: rgba(239, 68, 68, 0.25); color: #fca5a5; }
+    .leg-s { background: rgba(245, 158, 11, 0.25); color: #fcd34d; }
+
+    .shield-rows {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .shield-row {
+      display: grid;
+      grid-template-columns: 78px 1fr;
+      align-items: center;
+      background: #090f1d;
+      border: 1px solid #293b5c;
+      border-radius: 9px;
+      padding: 8px 10px;
+      gap: 10px;
+    }
+    .shield-row.active-row {
+      border-color: #38bdf8;
+      background: rgba(56, 189, 248, 0.1);
+    }
+    .gpio-name {
+      font-family: Consolas, monospace;
+      font-weight: 800;
+      font-size: 13px;
+      color: #fcd34d;
+    }
+    .gvs-pins {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 11px;
+    }
+    .pin-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 4px;
+    }
+    .dot-g { background: #94a3b8; }
+    .dot-v { background: #ef4444; }
+    .dot-s { background: #f59e0b; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>🔌 Bản Vẽ Lắp Ráp Thực Tế: ESP32-WROOM-38P + Đế Mở Rộng 38P</h1>
+      <p>Bấm vào tên từng linh kiện bên dưới để làm nổi bật đúng những chân cần cắm trên Đế Mở Rộng</p>
+    </div>
+    <div class="filter-bar">
+      <button class="filter-btn active" data-group="all">Hiện Tất Cả</button>
+      <button class="filter-btn" data-group="i2c">1. PN532 + LCD 1602 (I2C)</button>
+      <button class="filter-btn" data-group="ir">2. Bộ 4 Cảm Biến LM393</button>
+      <button class="filter-btn" data-group="act">3. Servo Barie + Còi Buzzer</button>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- CỘT TRÁI: PN532, LCD 1602, SERVO, BUZZER -->
+    <div class="col">
+      <div class="device-card" data-group="i2c">
+        <div class="dev-title">
+          <h3>1. Module Đọc Thẻ NFC/RFID PN532</h3>
+          <span class="badge">I2C (0x24)</span>
+        </div>
+        <p class="dev-note">
+          ⚠️ <b>Gạt công tắc nhỏ trên mạch PN532:</b><br/>
+          • Kênh 1 (SEL0) = <b>ON (1)</b> | Kênh 2 (SEL1) = <b>OFF (0)</b>
+        </p>
+        <div class="pin-list">
+          <div class="pin-row gnd"><span>PN532 <b>GND</b> (Cụm 4 chân)</span> <span>➔ Đế Hàng 21: Chân <code>G</code></span></div>
+          <div class="pin-row vcc"><span>PN532 <b>VCC</b> (Cụm 4 chân)</span> <span>➔ Đế Hàng 21: Chân <code>V</code></span></div>
+          <div class="pin-row sda"><span>PN532 <b>SDA</b> (Cụm 4 chân)</span> <span>➔ Đế Hàng 21: Chân <code>S (GPIO 21)</code></span></div>
+          <div class="pin-row scl"><span>PN532 <b>SCL</b> (Cụm 4 chân)</span> <span>➔ Đế Hàng 22: Chân <code>S (GPIO 22)</code></span></div>
+          <div class="pin-row"><span>PN532 <b>IRQ</b> (Cụm 8 chân)</span> <span>➔ Đế Hàng 16: Chân <code>S (GPIO 16)</code></span></div>
+          <div class="pin-row"><span>PN532 <b>RSTO</b> (Cụm 8 chân)</span> <span>➔ Đế Hàng 17: Chân <code>S (GPIO 17)</code></span></div>
+        </div>
+      </div>
+
+      <div class="device-card" data-group="i2c">
+        <div class="dev-title">
+          <h3>2. Màn Hình LCD 1602 (Hàn sẵn I2C)</h3>
+          <span class="badge">I2C (0x27)</span>
+        </div>
+        <p class="dev-note">
+          Dùng chung `GPIO 21` và `GPIO 22` với PN532 (Cắm vào hàng ốc vặn Domino số 21 &amp; 22 trên Đế Mở Rộng hoặc bắc cầu qua PN532).
+        </p>
+        <div class="pin-list">
+          <div class="pin-row gnd"><span>LCD <b>GND</b></span> <span>➔ Đế Hàng 22: Chân <code>G</code></span></div>
+          <div class="pin-row vcc"><span>LCD <b>VCC</b></span> <span>➔ Đế Hàng 22: Chân <code>V (5V)</code></span></div>
+          <div class="pin-row sda"><span>LCD <b>SDA</b></span> <span>➔ Đế Hàng 21: Domino/Chân <code>S (GPIO 21)</code></span></div>
+          <div class="pin-row scl"><span>LCD <b>SCL</b></span> <span>➔ Đế Hàng 22: Domino/Chân <code>S (GPIO 22)</code></span></div>
+        </div>
+      </div>
+
+      <div class="device-card" data-group="act">
+        <div class="dev-title">
+          <h3>3A. Động Cơ Servo SG90 #1 (Barie CỔNG VÀO)</h3>
+          <span class="badge">PWM - GPIO 13</span>
+        </div>
+        <p class="dev-note">Đặt tại làn Cổng Vào (đi cặp với cảm biến LM393 #3). Cắm vào hàng <b>GPIO 13</b>:</p>
+        <div class="pin-list">
+          <div class="pin-row gnd"><span>Dây <b>Nâu / Đen</b> (GND)</span> <span>➔ Đế Hàng 13: Chân <code>G</code></span></div>
+          <div class="pin-row vcc"><span>Dây <b>Đỏ</b> (VCC 5V)</span> <span>➔ Đế Hàng 13: Chân <code>V</code></span></div>
+          <div class="pin-row"><span>Dây <b>Cam / Vàng</b> (Signal)</span> <span>➔ Đế Hàng 13: Chân <code>S (GPIO 13)</code></span></div>
+        </div>
+      </div>
+
+      <div class="device-card" data-group="act">
+        <div class="dev-title">
+          <h3>3B. Động Cơ Servo SG90 #2 (Barie CỔNG RA)</h3>
+          <span class="badge">PWM - GPIO 14</span>
+        </div>
+        <p class="dev-note">Đặt tại làn Cổng Ra (đi cặp với cảm biến LM393 #4). Cắm vào hàng <b>GPIO 14</b>:</p>
+        <div class="pin-list">
+          <div class="pin-row gnd"><span>Dây <b>Nâu / Đen</b> (GND)</span> <span>➔ Đế Hàng 14: Chân <code>G</code></span></div>
+          <div class="pin-row vcc"><span>Dây <b>Đỏ</b> (VCC 5V)</span> <span>➔ Đế Hàng 14: Chân <code>V</code></span></div>
+          <div class="pin-row"><span>Dây <b>Cam / Vàng</b> (Signal)</span> <span>➔ Đế Hàng 14: Chân <code>S (GPIO 14)</code></span></div>
+        </div>
+      </div>
+
+      <div class="device-card" data-group="act">
+        <div class="dev-title">
+          <h3>4. Còi Chíp Buzzer</h3>
+          <span class="badge">Digital Out</span>
+        </div>
+        <div class="pin-list">
+          <div class="pin-row gnd"><span>Chân Âm <b>(-) / GND</b></span> <span>➔ Đế Hàng 27: Chân <code>G</code></span></div>
+          <div class="pin-row"><span>Chân Dương <b>(+) / IO</b></span> <span>➔ Đế Hàng 27: Chân <code>S (GPIO 27)</code></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CỘT GIỮA: ĐẾ MỞ RỘNG ESP32-WROOM-38P -->
+    <div class="shield-board">
+      <div class="shield-header">
+        <h2>ĐẾ MỞ RỘNG ESP32 38P</h2>
+        <p style="font-size:12px;color:#94a3b8;">(Đã cắm mạch ESP32-WROOM-38P CP2102 lên trên)</p>
+        <div class="jumper-alert">
+          ⚡ Nhớ cắm chốt nhựa Jumper trên Đế ở mức <b>5V</b>
+        </div>
+      </div>
+
+      <div class="gvs-legend">
+        <div class="leg-g">Cột G = GND (-)</div>
+        <div class="leg-v">Cột V = VCC (+5V)</div>
+        <div class="leg-s">Cột S = Tín hiệu GPIO</div>
+      </div>
+
+      <div class="shield-rows">
+        <div class="shield-row" data-group="i2c">
+          <span class="gpio-name">GPIO 21</span>
+          <div class="gvs-pins">
+            <span><i class="pin-dot dot-g"></i><b>G</b>: GND của PN532</span>
+            <span><i class="pin-dot dot-v"></i><b>V</b>: VCC của PN532</span>
+            <span><i class="pin-dot dot-s"></i><b>S</b>: Chân <b>SDA</b> (PN532 + LCD)</span>
+          </div>
+        </div>
+
+        <div class="shield-row" data-group="i2c">
+          <span class="gpio-name">GPIO 22</span>
+          <div class="gvs-pins">
+            <span><i class="pin-dot dot-g"></i><b>G</b>: GND của LCD 1602</span>
+            <span><i class="pin-dot dot-v"></i><b>V</b>: VCC của LCD 1602</span>
+            <span><i class="pin-dot dot-s"></i><b>S</b>: Chân <b>SCL</b> (PN532 + LCD)</span>
+          </div>
+        </div>
+
+        <div class="shield-row" data-group="i2c">
+          <span class="gpio-name">GPIO 16</span>
+          <div class="gvs-pins">
+            <span><i class="pin-dot dot-s"></i><b>S</b>: Nối chân <b>IRQ</b> của PN532</span>
+          </div>
+        </div>
+
+        <div class="shield-row" data-group="i2c">
+          <span class="gpio-name">GPIO 17</span>
+          <div class="gvs-pins">
+            <span><i class="pin-dot dot-s"></i><b>S</b>: Nối chân <b>RSTO</b> của PN532</span>
+          </div>
+        </div>
+
+        <div class="shield-row" data-group="ir">
+          <span class="gpio-name">GPIO 32</span>
+          <div class="gvs-pins">
+            <span><i class="pin-dot dot-g"></i><b>G</b> ➔ GND | <i class="pin-dot dot-v"></i><b>V</b> ➔ VCC</span>
+            <span><i class="pin-dot dot-s"></i><b>S</b> ➔ Chân <b>OUT (LM393 Ô Đỗ 1)</b></span>
+          </div>
+        </div>
+
+        <div class="shield-row" data-group="ir">
+          <span class="gpio-name">GPIO 33</span>
+          <div class="gvs-pins">
+            <span><i class="pin-dot dot-g"></i><b>G</b> ➔ GND | <i class="pin-dot dot-v"></i><b>V</b> ➔ VCC</span>
+            <span><i class="pin-dot dot-s"></i><b>S</b> ➔ Chân <b>OUT (LM393 Ô Đỗ 2)</b></span>
+          </div>
+        </div>
+
+        <div class="shield-row" data-group="ir">
+          <span class="gpio-name">GPIO 25</span>
+          <div class="gvs-pins">
+            <span><i class="pin-dot dot-g"></i><b>G</b> ➔ GND | <i class="pin-dot dot-v"></i><b>V</b> ➔ VCC</span>
+            <span><i class="pin-dot dot-s"></i><b>S</b> ➔ Chân <b>OUT (LM393 Cổng Vào)</b></span>
+          </div>
+        </div>
+
+        <div class="shield-row" data-group="ir">
+          <span class="gpio-name">GPIO 26</span>
+          <div class="gvs-pins">
+            <span><i class="pin-dot dot-g"></i><b>G</b> ➔ GND | <i class="pin-dot dot-v"></i><b>V</b> ➔ VCC</span>
+            <span><i class="pin-dot dot-s"></i><b>S</b> ➔ Chân <b>OUT (LM393 Cổng Ra)</b></span>
+          </div>
+        </div>
+
+        <div class="shield-row" data-group="act">
+          <span class="gpio-name">GPIO 13</span>
+          <div class="gvs-pins">
+            <span><i class="pin-dot dot-g"></i><b>G</b> ➔ Nâu | <i class="pin-dot dot-v"></i><b>V</b> ➔ Đỏ</span>
+            <span><i class="pin-dot dot-s"></i><b>S</b> ➔ Dây Cam <b>(Servo #1 - Barie CỔNG VÀO)</b></span>
+          </div>
+        </div>
+
+        <div class="shield-row" data-group="act">
+          <span class="gpio-name">GPIO 14</span>
+          <div class="gvs-pins">
+            <span><i class="pin-dot dot-g"></i><b>G</b> ➔ Nâu | <i class="pin-dot dot-v"></i><b>V</b> ➔ Đỏ</span>
+            <span><i class="pin-dot dot-s"></i><b>S</b> ➔ Dây Cam <b>(Servo #2 - Barie CỔNG RA)</b></span>
+          </div>
+        </div>
+
+        <div class="shield-row" data-group="act">
+          <span class="gpio-name">GPIO 27</span>
+          <div class="gvs-pins">
+            <span><i class="pin-dot dot-g"></i><b>G</b> ➔ Cực Âm (-)</span>
+            <span><i class="pin-dot dot-s"></i><b>S</b> ➔ Cực Dương (+) <b>(Còi Buzzer)</b></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CỘT PHẢI: 4 CẢM BIẾN HỒNG NGOẠI LM393 -->
+    <div class="col">
+      <div class="device-card" data-group="ir">
+        <div class="dev-title">
+          <h3>5. Cảm Biến Hồng Ngoại LM393 #1</h3>
+          <span class="badge">Ô ĐỖ XE S1</span>
+        </div>
+        <p class="dev-note">Đặt tại vị trí Ô đỗ xe số 1. Dùng 3 sợi dây Cái-Cái cắm thẳng vào hàng <b>GPIO 32</b>:</p>
+        <div class="pin-list">
+          <div class="pin-row gnd"><span>LM393 #1 <b>GND</b></span> <span>➔ Đế Hàng 32: Chân <code>G</code></span></div>
+          <div class="pin-row vcc"><span>LM393 #1 <b>VCC</b></span> <span>➔ Đế Hàng 32: Chân <code>V</code></span></div>
+          <div class="pin-row"><span>LM393 #1 <b>OUT</b></span> <span>➔ Đế Hàng 32: Chân <code>S (GPIO 32)</code></span></div>
+        </div>
+      </div>
+
+      <div class="device-card" data-group="ir">
+        <div class="dev-title">
+          <h3>6. Cảm Biến Hồng Ngoại LM393 #2</h3>
+          <span class="badge">Ô ĐỖ XE S2</span>
+        </div>
+        <p class="dev-note">Đặt tại vị trí Ô đỗ xe số 2. Dùng 3 sợi dây Cái-Cái cắm thẳng vào hàng <b>GPIO 33</b>:</p>
+        <div class="pin-list">
+          <div class="pin-row gnd"><span>LM393 #2 <b>GND</b></span> <span>➔ Đế Hàng 33: Chân <code>G</code></span></div>
+          <div class="pin-row vcc"><span>LM393 #2 <b>VCC</b></span> <span>➔ Đế Hàng 33: Chân <code>V</code></span></div>
+          <div class="pin-row"><span>LM393 #2 <b>OUT</b></span> <span>➔ Đế Hàng 33: Chân <code>S (GPIO 33)</code></span></div>
+        </div>
+      </div>
+
+      <div class="device-card" data-group="ir">
+        <div class="dev-title">
+          <h3>7. Cảm Biến Hồng Ngoại LM393 #3</h3>
+          <span class="badge">CỔNG VÀO (IN)</span>
+        </div>
+        <p class="dev-note">Đặt ở làn Cổng Vào (trước thanh chắn Barie). Cắm vào hàng <b>GPIO 25</b>:</p>
+        <div class="pin-list">
+          <div class="pin-row gnd"><span>LM393 #3 <b>GND</b></span> <span>➔ Đế Hàng 25: Chân <code>G</code></span></div>
+          <div class="pin-row vcc"><span>LM393 #3 <b>VCC</b></span> <span>➔ Đế Hàng 25: Chân <code>V</code></span></div>
+          <div class="pin-row"><span>LM393 #3 <b>OUT</b></span> <span>➔ Đế Hàng 25: Chân <code>S (GPIO 25)</code></span></div>
+        </div>
+      </div>
+
+      <div class="device-card" data-group="ir">
+        <div class="dev-title">
+          <h3>8. Cảm Biến Hồng Ngoại LM393 #4</h3>
+          <span class="badge">CỔNG RA (OUT)</span>
+        </div>
+        <p class="dev-note">Đặt ở làn Cổng Ra (sau thanh chắn Barie). Cắm vào hàng <b>GPIO 26</b>:</p>
+        <div class="pin-list">
+          <div class="pin-row gnd"><span>LM393 #4 <b>GND</b></span> <span>➔ Đế Hàng 26: Chân <code>G</code></span></div>
+          <div class="pin-row vcc"><span>LM393 #4 <b>VCC</b></span> <span>➔ Đế Hàng 26: Chân <code>V</code></span></div>
+          <div class="pin-row"><span>LM393 #4 <b>OUT</b></span> <span>➔ Đế Hàng 26: Chân <code>S (GPIO 26)</code></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const buttons = document.querySelectorAll(".filter-btn");
+    const cards = document.querySelectorAll(".device-card");
+    const rows = document.querySelectorAll(".shield-row");
+
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        buttons.forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        const group = btn.getAttribute("data-group");
+
+        cards.forEach((c) => {
+          if (group === "all" || c.getAttribute("data-group") === group) {
+            c.classList.remove("dim");
+            c.classList.toggle("highlight", group !== "all");
+          } else {
+            c.classList.add("dim");
+            c.classList.remove("highlight");
+          }
+        });
+
+        rows.forEach((r) => {
+          if (group !== "all" && r.getAttribute("data-group") === group) {
+            r.classList.add("active-row");
+          } else {
+            r.classList.remove("active-row");
+          }
+        });
+      });
+    });
+  </script>
+</body>
+</html>

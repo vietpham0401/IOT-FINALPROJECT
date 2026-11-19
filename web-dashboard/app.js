@@ -6,9 +6,9 @@ const authorizedDirectory = {
 };
 
 let parkingState = {
-  totalSlots: 3,
+  totalSlots: 2,
   gateOpen: false,
-  slots: [false, false, false]
+  slots: [false, false]
 };
 
 // Phiên chờ xác thực 2 lớp (Sau khi quẹt thẻ PN532 -> Chờ Camera điện thoại quét biển số)
@@ -74,7 +74,7 @@ function renderDashboard() {
     const slotEl = document.createElement("div");
     slotEl.className = `slot-box ${isOccupied ? "occupied" : "free"}`;
     slotEl.innerHTML = `
-      <span class="slot-title">Ô ĐỖ S${idx + 1} (GPIO ${[32, 33, 25][idx]})</span>
+      <span class="slot-title">Ô ĐỖ S${idx + 1} (LM393 - GPIO ${[32, 33][idx]})</span>
       <div class="slot-icon">${isOccupied ? "🚗" : "🅿️"}</div>
       <span class="slot-badge">${isOccupied ? "ĐÃ CÓ XE (IR = LOW)" : "CÒN TRỐNG (IR = HIGH)"}</span>
     `;
@@ -420,8 +420,7 @@ async function fetchFromFirebase() {
       parkingState.gateOpen = Boolean(data.status.gateOpen);
       parkingState.slots = [
         Boolean(data.status.slots.slot1),
-        Boolean(data.status.slots.slot2),
-        Boolean(data.status.slots.slot3)
+        Boolean(data.status.slots.slot2)
       ];
       renderDashboard();
     }

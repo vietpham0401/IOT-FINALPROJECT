@@ -1,24 +1,24 @@
 /**
  * ============================================================================
  * DỰ ÁN CUỐI KỲ MÔN INTRODUCTION TO IOT
- * Đề tài: IoT-Based Smart Vehicle Parking System using RFID (PN532) & Phone Camera ALPR
- * Vi điều khiển: ESP32 DevKit V1
+ * Đề tài: IoT-Based Smart Vehicle Parking System using PN532 & Phone Camera ALPR
+ * Vi điều khiển: ESP32-WROOM-38P (Bản 38 chân) + Đế Mở Rộng 38P
  * ============================================================================
  *
- * NÂNG CẤP ĐẶC BIỆT:
- * 1. Sử dụng module NFC/RFID PN532 qua giao tiếp I2C (dùng chung chân SDA=21, SCL=22
- *    với màn hình LCD 1602 I2C vì PN532 có địa chỉ 0x24 còn LCD có địa chỉ 0x27).
- *    -> Lưu ý gạt công tắc (DIP Switch) trên mạch PN532 sang chế độ I2C:
- *       Channel 1 (SEL0) = ON (1) | Channel 2 (SEL1) = OFF (0)
- * 2. Xác thực 2 lớp (2-Factor Authentication):
- *    - Bước 1: Quẹt thẻ trên PN532 -> Lấy UID & Biển số xe đăng ký.
- *    - Bước 2: Camera điện thoại trên Web Dashboard quét biển số thực tế (OCR).
- *    - Bước 3: Nếu Biển số Camera == Biển số Thẻ -> Mở cổng Barie (Servo 90°).
- *
- * Thư viện cần cài đặt trên Arduino IDE (Library Manager):
- * 1. Adafruit PN532 (by Adafruit)
- * 2. ESP32Servo (by Kevin Harrington)
- * 3. LiquidCrystal I2C (by Frank de Brabander)
+ * CẤU HÌNH PHẦN CỨNG CHỐT (BẢN 2 SERVO CỔNG VÀO & CỔNG RA ĐỘC LẬP):
+ * - 1x ESP32-WROOM-38P (38 Pins) + Đế Mở Rộng 38P
+ * - 1x Module đọc thẻ NFC/RFID PN532 (Chế độ I2C: SDA=21, SCL=22, IRQ=16, RST=17)
+ * - 1x Màn hình LCD 1602 hàn sẵn I2C (Dùng chung SDA=21, SCL=22)
+ * - 4x Cảm biến hồng ngoại LM393:
+ *      + LM393 #1: IR Ô đỗ 1 (Slot 1)    -> GPIO 32
+ *      + LM393 #2: IR Ô đỗ 2 (Slot 2)    -> GPIO 33
+ *      + LM393 #3: IR Cổng Vào (Gate In) -> GPIO 25
+ *      + LM393 #4: IR Cổng Ra (Gate Out) -> GPIO 26
+ * - 2x Động cơ Servo SG90:
+ *      + Servo #1: Thanh chắn Barie CỔNG VÀO -> GPIO 13
+ *      + Servo #2: Thanh chắn Barie CỔNG RA  -> GPIO 14
+ * - 1x Còi Buzzer -> GPIO 27
+ * - 1x Camera Điện thoại (Quét & đối chiếu biển số xe trên Web Dashboard)
  */
 
 #include <WiFi.h>
@@ -32,43 +32,42 @@
 const char* WIFI_SSID     = "YOUR_WIFI_SSID";
 const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
-// URL Firebase Realtime Database
 const String FIREBASE_HOST = "https://YOUR_PROJECT_ID.firebasedatabase.app";
 const String FIREBASE_AUTH = "";
 
-// Chế độ bắt buộc xác thực biển số qua Camera điện thoại trên Web Dashboard
-// Đặt = true khi demo kết hợp Web Dashboard + Camera điện thoại
-// Đặt = false nếu muốn test nhanh quẹt thẻ mở cổng ngay khi chưa bật Web
+// Đặt = true để bắt buộc đối chiếu biển số qua Camera ĐT trước khi mở cổng
 bool REQUIRE_CAMERA_PLATE_MATCH = true;
 
-// ===================== 2. ĐỊNH NGHĨA CHÂN KẾT NỐI (PINOUT) ==================
-// Giao tiếp I2C dùng chung cho cả PN532 (0x24) và LCD 1602 (0x27)
-#define I2C_SDA_PIN     21
-#define I2C_SCL_PIN     22
+// ===================== 2. ĐỊNH NGHĨA CHÂN TRÊN ESP32-WROOM-38P ==============
+// Bus I2C dùng chung cho PN532 (0x24) và LCD 1602 (0x27)
+#define I2C_SDA_PIN        21
+#define I2C_SCL_PIN        22
 
-// Chân IRQ và RESET cho PN532 I2C
-#define PN532_IRQ       16
-#define PN532_RESET     17
+// Chân điều khiển PN532
+#define PN532_IRQ          16
+#define PN532_RESET        17
 
 // Màn hình LCD 1602 I2C
-#define LCD_ADDRESS     0x27
-#define LCD_COLS        16
-#define LCD_ROWS        2
+#define LCD_ADDRESS        0x27
+#define LCD_COLS           16
+#define LCD_ROWS           2
 
-// Động cơ Servo điều khiển thanh chắn Barie
-#define SERVO_PIN       13
-#define GATE_CLOSED_DEG 0
-#define GATE_OPEN_DEG   90
+// 2 Động cơ Servo SG90 điều khiển 2 thanh chắn Barie Vào & Ra riêng biệt
+#define SERVO_IN_PIN       13  // Servo #1: Barie CỔNG VÀO
+#define SERVO_OUT_PIN      14  // Servo #2: Barie CỔNG RA
+#define GATE_CLOSED_DEG    0
+#define GATE_OPEN_DEG      90
 
-// Cảm biến hồng ngoại (IR Sensors) - LOW = Có xe, HIGH = Trống
-#define NUM_SLOTS       3
-const int IR_SLOT_PINS[NUM_SLOTS] = {32, 33, 25};
-#define IR_GATE_PIN     26
+// 4 Cảm biến hồng ngoại LM393 (LOW = Có xe che, HIGH = Trống)
+#define NUM_SLOTS          2
+const int IR_SLOT_PINS[NUM_SLOTS] = {32, 33}; // 2 cảm biến cho 2 ô đỗ xe
+#define IR_GATE_IN_PIN     25                 // 1 cảm biến cho làn Cổng Vào
+#define IR_GATE_OUT_PIN    26                 // 1 cảm biến cho làn Cổng Ra
 
 // Còi báo Buzzer
-#define BUZZER_PIN      27
+#define BUZZER_PIN         27
 
-// ===================== 3. DANH SÁCH THẺ RFID/NFC PN532 HỢP LỆ ===============
+// ===================== 3. DANH SÁCH THẺ NFC/RFID PN532 HỢP LỆ ===============
 struct AuthorizedCard {
   String uid;
   String ownerName;
@@ -86,21 +85,27 @@ const int NUM_VALID_CARDS = sizeof(validCards) / sizeof(validCards[0]);
 // ===================== 4. KHỞI TẠO ĐỐI TƯỢNG & BIẾN TOÀN CỤC ================
 Adafruit_PN532 nfc(PN532_IRQ, PN532_RESET);
 LiquidCrystal_I2C lcd(LCD_ADDRESS, LCD_COLS, LCD_ROWS);
-Servo gateServo;
+Servo gateInServo;   // Servo #1 (Cổng Vào - GPIO 13)
+Servo gateOutServo;  // Servo #2 (Cổng Ra  - GPIO 14)
 
-bool slotOccupied[NUM_SLOTS] = {false, false, false};
-bool lastSlotState[NUM_SLOTS] = {false, false, false};
+bool slotOccupied[NUM_SLOTS] = {false, false};
+bool lastSlotState[NUM_SLOTS] = {false, false};
 int availableSlots = NUM_SLOTS;
 
-bool isGateOpen = false;
-unsigned long gateOpenedTime = 0;
+bool gateInSensorActive = false;
+bool gateOutSensorActive = false;
+
+bool isGateInOpen = false;
+bool isGateOutOpen = false;
+unsigned long gateInOpenedTime = 0;
+unsigned long gateOutOpenedTime = 0;
 const unsigned long GATE_TIMEOUT_MS = 5000;
 
-// Biến phục vụ chờ Camera điện thoại xác nhận biển số
 bool waitingForCameraVerify = false;
 int pendingCardIndex = -1;
+String pendingDirection = "CHECK_IN";
 unsigned long verifyRequestTime = 0;
-const unsigned long CAMERA_VERIFY_TIMEOUT_MS = 15000; // Chờ tối đa 15 giây để camera quét biển số
+const unsigned long CAMERA_VERIFY_TIMEOUT_MS = 15000;
 
 unsigned long lastCloudPoll = 0;
 const unsigned long CLOUD_POLL_INTERVAL_MS = 1200;
@@ -118,17 +123,16 @@ void beep(int times, int durationMs) {
 void updateLcdDefaultScreen() {
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("SMART PARKING ");
+  lcd.print("PARKING FREE:");
   lcd.print(availableSlots);
-  lcd.print("F");
+  lcd.print("/");
+  lcd.print(NUM_SLOTS);
 
   lcd.setCursor(0, 1);
-  for (int i = 0; i < NUM_SLOTS; i++) {
-    lcd.print("S");
-    lcd.print(i + 1);
-    lcd.print(":");
-    lcd.print(slotOccupied[i] ? "X " : "O ");
-  }
+  lcd.print("S1:");
+  lcd.print(slotOccupied[0] ? "FULL " : "FREE ");
+  lcd.print("S2:");
+  lcd.print(slotOccupied[1] ? "FULL" : "FREE");
 }
 
 void showLcdAlert(const String& line1, const String& line2, int beepCount, int beepMs) {
@@ -140,19 +144,33 @@ void showLcdAlert(const String& line1, const String& line2, int beepCount, int b
   if (beepCount > 0) beep(beepCount, beepMs);
 }
 
-// ===================== 6. ĐIỀU KHIỂN THANH CHẮN BARIE =======================
-void openGate() {
-  gateServo.write(GATE_OPEN_DEG);
-  isGateOpen = true;
-  gateOpenedTime = millis();
-  Serial.println("[GATE] Thanh chan Barie: MO (90 deg)");
+// ===================== 6. ĐIỀU KHIỂN 2 THANH CHẮN BARIE VÀO & RA ============
+void openGateIn() {
+  gateInServo.write(GATE_OPEN_DEG);
+  isGateInOpen = true;
+  gateInOpenedTime = millis();
+  Serial.println("[GATE IN - GPIO 13] Mo Barie CONG VAO (90 deg)");
 }
 
-void closeGate() {
-  gateServo.write(GATE_CLOSED_DEG);
-  isGateOpen = false;
-  Serial.println("[GATE] Thanh chan Barie: DONG (0 deg)");
-  updateLcdDefaultScreen();
+void closeGateIn() {
+  gateInServo.write(GATE_CLOSED_DEG);
+  isGateInOpen = false;
+  Serial.println("[GATE IN - GPIO 13] Dong Barie CONG VAO (0 deg)");
+  if (!isGateOutOpen) updateLcdDefaultScreen();
+}
+
+void openGateOut() {
+  gateOutServo.write(GATE_OPEN_DEG);
+  isGateOutOpen = true;
+  gateOutOpenedTime = millis();
+  Serial.println("[GATE OUT - GPIO 14] Mo Barie CONG RA (90 deg)");
+}
+
+void closeGateOut() {
+  gateOutServo.write(GATE_CLOSED_DEG);
+  isGateOutOpen = false;
+  Serial.println("[GATE OUT - GPIO 14] Dong Barie CONG RA (0 deg)");
+  if (!isGateInOpen) updateLcdDefaultScreen();
 }
 
 // ===================== 7. ĐỒNG BỘ FIREBASE & NHẬN KẾT QUẢ CAMERA ============
@@ -168,7 +186,11 @@ void syncSlotsToFirebase() {
   String payload = "{";
   payload += "\"totalSlots\":" + String(NUM_SLOTS) + ",";
   payload += "\"availableSlots\":" + String(availableSlots) + ",";
-  payload += "\"gateOpen\":" + String(isGateOpen ? "true" : "false") + ",";
+  payload += "\"gateOpen\":" + String((isGateInOpen || isGateOutOpen) ? "true" : "false") + ",";
+  payload += "\"gateInOpen\":" + String(isGateInOpen ? "true" : "false") + ",";
+  payload += "\"gateOutOpen\":" + String(isGateOutOpen ? "true" : "false") + ",";
+  payload += "\"gateInIR\":" + String(gateInSensorActive ? "true" : "false") + ",";
+  payload += "\"gateOutIR\":" + String(gateOutSensorActive ? "true" : "false") + ",";
   payload += "\"slots\":{";
   for (int i = 0; i < NUM_SLOTS; i++) {
     payload += "\"slot" + String(i + 1) + "\":" + String(slotOccupied[i] ? "true" : "false");
@@ -182,7 +204,6 @@ void syncSlotsToFirebase() {
   http.end();
 }
 
-// Gửi yêu cầu lên Firebase để Web Dashboard + Camera điện thoại kiểm tra biển số
 void requestCameraVerificationOnFirebase(const AuthorizedCard& card, const String& mode) {
   if (WiFi.status() != WL_CONNECTED || FIREBASE_HOST.indexOf("YOUR_PROJECT_ID") != -1) {
     return;
@@ -192,7 +213,6 @@ void requestCameraVerificationOnFirebase(const AuthorizedCard& card, const Strin
   String url = FIREBASE_HOST + "/parking/cameraCheck.json";
   if (FIREBASE_AUTH.length() > 0) url += "?auth=" + FIREBASE_AUTH;
 
-  // status: "PENDING" (Chờ camera), "MATCHED" (Trùng biển số), "MISMATCH" (Sai biển số)
   String payload = "{";
   payload += "\"uid\":\"" + card.uid + "\",";
   payload += "\"owner\":\"" + card.ownerName + "\",";
@@ -208,11 +228,9 @@ void requestCameraVerificationOnFirebase(const AuthorizedCard& card, const Strin
   http.end();
 }
 
-// Kiểm tra xem Camera điện thoại trên Web Dashboard đã xác nhận khớp biển số chưa
 void pollCameraVerificationResult() {
   if (!waitingForCameraVerify || pendingCardIndex < 0) return;
 
-  // Nếu quá 15 giây không quét được biển số -> Hủy phiên
   if (millis() - verifyRequestTime > CAMERA_VERIFY_TIMEOUT_MS) {
     Serial.println("[CAMERA] Het thoi gian cho quet bien so (Timeout)!");
     showLcdAlert("CAMERA TIMEOUT!", "Swipe card again", 2, 200);
@@ -239,20 +257,23 @@ void pollCameraVerificationResult() {
     res.trim();
 
     if (res == "MATCHED") {
-      // Camera xác nhận biển số TRÙNG KHỚP!
       AuthorizedCard& card = validCards[pendingCardIndex];
-      bool isCheckingOut = card.isParked;
-      card.isParked = !card.isParked;
+      bool isCheckingOut = (pendingDirection == "CHECK_OUT");
+      card.isParked = !isCheckingOut;
 
       Serial.println("[CAMERA ALPR] -> BIEN SO TRUNG KHOP: " + card.licensePlate);
-      showLcdAlert(isCheckingOut ? "PLATE MATCH: OUT" : "PLATE MATCH: IN", card.licensePlate, 1, 150);
-      openGate();
+      if (isCheckingOut) {
+        showLcdAlert("OPEN EXIT GATE!", card.licensePlate, 1, 150);
+        openGateOut(); // Mở Servo #2 (Cổng Ra - GPIO 14)
+      } else {
+        showLcdAlert("OPEN ENTRY GATE!", card.licensePlate, 1, 150);
+        openGateIn();  // Mở Servo #1 (Cổng Vào - GPIO 13)
+      }
       syncSlotsToFirebase();
 
       waitingForCameraVerify = false;
       pendingCardIndex = -1;
     } else if (res == "MISMATCH") {
-      // Camera phát hiện biển số KHÔNG KHỚP với thẻ RFID!
       Serial.println("[CAMERA ALPR] -> CANH BAO: BIEN SO KHONG TRUNG KHOP VOI THE!");
       showLcdAlert("PLATE MISMATCH!", "Access Denied!", 4, 200);
       waitingForCameraVerify = false;
@@ -264,8 +285,8 @@ void pollCameraVerificationResult() {
   http.end();
 }
 
-// ===================== 8. ĐỌC CẢM BIẾN HỒNG NGOẠI (IR SENSORS) ==============
-void readParkingSlotSensors() {
+// ===================== 8. ĐỌC 4 CẢM BIẾN HỒNG NGOẠI LM393 ===================
+void readAllIrSensors() {
   bool stateChanged = false;
   int freeCount = 0;
 
@@ -277,13 +298,21 @@ void readParkingSlotSensors() {
     if (occupied != lastSlotState[i]) {
       stateChanged = true;
       lastSlotState[i] = occupied;
-      Serial.printf("[SENSOR] O do so %d: %s\n", i + 1, occupied ? "CO XE (Occupied)" : "TRONG (Free)");
+      Serial.printf("[IR SLOT] O do so %d: %s\n", i + 1, occupied ? "CO XE (FULL)" : "TRONG (FREE)");
     }
+  }
+
+  bool inActive = (digitalRead(IR_GATE_IN_PIN) == LOW);
+  bool outActive = (digitalRead(IR_GATE_OUT_PIN) == LOW);
+  if (inActive != gateInSensorActive || outActive != gateOutSensorActive) {
+    gateInSensorActive = inActive;
+    gateOutSensorActive = outActive;
+    stateChanged = true;
   }
 
   availableSlots = freeCount;
   if (stateChanged) {
-    if (!isGateOpen && !waitingForCameraVerify) {
+    if (!isGateInOpen && !isGateOutOpen && !waitingForCameraVerify) {
       updateLcdDefaultScreen();
     }
     syncSlotsToFirebase();
@@ -303,12 +332,11 @@ String formatUidBytes(uint8_t* uid, uint8_t uidLength) {
 }
 
 void handlePn532Scan() {
-  if (waitingForCameraVerify) return; // Đang chờ camera xác thực thẻ vừa quẹt
+  if (waitingForCameraVerify) return;
 
   uint8_t uid[7] = {0};
   uint8_t uidLength = 0;
 
-  // Đọc thẻ chuẩn ISO14443A (Mifare / NFC) với timeout ngắn 40ms để không làm trễ vòng lặp
   bool success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength, 40);
   if (!success) return;
 
@@ -324,7 +352,6 @@ void handlePn532Scan() {
     }
   }
 
-  // Trường hợp 1: Thẻ lạ
   if (matchedIndex == -1) {
     Serial.println("[PN532] -> TU CHOI: The khong hop le!");
     showLcdAlert("ACCESS DENIED!", "UID:" + scannedUid, 3, 150);
@@ -335,30 +362,41 @@ void handlePn532Scan() {
 
   AuthorizedCard& card = validCards[matchedIndex];
 
-  // Trường hợp 2: Xe muốn vào nhưng bãi đã đầy
-  if (!card.isParked && availableSlots <= 0) {
-    Serial.println("[PN532] -> TU CHOI: Bai do xe da day!");
-    showLcdAlert("PARKING FULL!", "Please wait...", 2, 250);
+  // Xác định xe đang yêu cầu mở Cổng Vào (Servo #1) hay Cổng Ra (Servo #2):
+  bool wantsToExit = card.isParked;
+  if (gateOutSensorActive && !gateInSensorActive) {
+    wantsToExit = true;
+  } else if (gateInSensorActive && !gateOutSensorActive) {
+    wantsToExit = false;
+  }
+
+  if (!wantsToExit && availableSlots <= 0) {
+    Serial.println("[PN532] -> TU CHOI: Bai do xe da day (2/2)!");
+    showLcdAlert("PARKING FULL!", "0/2 Free Slots", 2, 250);
     delay(1500);
     updateLcdDefaultScreen();
     return;
   }
 
-  // Trường hợp 3: Thẻ hợp lệ -> Yêu cầu Camera điện thoại đối chiếu biển số
+  pendingDirection = wantsToExit ? "CHECK_OUT" : "CHECK_IN";
+
   if (REQUIRE_CAMERA_PLATE_MATCH && WiFi.status() == WL_CONNECTED) {
     pendingCardIndex = matchedIndex;
     waitingForCameraVerify = true;
     verifyRequestTime = millis();
 
-    String mode = card.isParked ? "CHECK_OUT" : "CHECK_IN";
-    Serial.println("[PN532] The hop le (" + card.licensePlate + "). Dang cho Camera dien thoai xac thuc bien so...");
+    Serial.println("[PN532] The hop le (" + card.licensePlate + "). Cho Camera ĐT xac thuc bien so...");
     showLcdAlert("CHECKING PLATE..", card.licensePlate, 1, 80);
-    requestCameraVerificationOnFirebase(card, mode);
+    requestCameraVerificationOnFirebase(card, pendingDirection);
   } else {
-    // Nếu chạy Offline không bật Camera -> Mở cổng trực tiếp
-    card.isParked = !card.isParked;
-    showLcdAlert(card.isParked ? "WELCOME!" : "GOODBYE!", card.licensePlate, 1, 120);
-    openGate();
+    card.isParked = !wantsToExit;
+    if (wantsToExit) {
+      showLcdAlert("GOODBYE! (EXIT)", card.licensePlate, 1, 120);
+      openGateOut(); // Mở Servo #2 (Barie Cổng Ra - GPIO 14)
+    } else {
+      showLcdAlert("WELCOME! (ENTRY)", card.licensePlate, 1, 120);
+      openGateIn();  // Mở Servo #1 (Barie Cổng Vào - GPIO 13)
+    }
     syncSlotsToFirebase();
   }
 }
@@ -366,7 +404,7 @@ void handlePn532Scan() {
 // ===================== 10. SETUP & LOOP CHÍNH ===============================
 void setup() {
   Serial.begin(115200);
-  Serial.println("\n--- KHOI DONG SMART PARKING (PN532 + CAMERA ALPR) ---");
+  Serial.println("\n--- KHOI DONG SMART PARKING (2 SERVO BARIE VAO/RA) ---");
 
   pinMode(BUZZER_PIN, OUTPUT);
   digitalWrite(BUZZER_PIN, LOW);
@@ -374,15 +412,20 @@ void setup() {
   for (int i = 0; i < NUM_SLOTS; i++) {
     pinMode(IR_SLOT_PINS[i], INPUT_PULLUP);
   }
-  pinMode(IR_GATE_PIN, INPUT_PULLUP);
+  pinMode(IR_GATE_IN_PIN, INPUT_PULLUP);
+  pinMode(IR_GATE_OUT_PIN, INPUT_PULLUP);
 
-  // Khởi tạo Servo Barie
+  // Khởi tạo 2 động cơ Servo SG90 (GPIO 13 & GPIO 14)
   ESP32PWM::allocateTimer(0);
-  gateServo.setPeriodHertz(50);
-  gateServo.attach(SERVO_PIN, 500, 2400);
-  gateServo.write(GATE_CLOSED_DEG);
+  ESP32PWM::allocateTimer(1);
+  gateInServo.setPeriodHertz(50);
+  gateOutServo.setPeriodHertz(50);
+  gateInServo.attach(SERVO_IN_PIN, 500, 2400);
+  gateOutServo.attach(SERVO_OUT_PIN, 500, 2400);
+  gateInServo.write(GATE_CLOSED_DEG);
+  gateOutServo.write(GATE_CLOSED_DEG);
 
-  // Khởi tạo Bus I2C (Dùng chung cho LCD 1602 và PN532)
+  // Khởi tạo Bus I2C (SDA=21, SCL=22) dùng chung cho LCD 1602 và PN532
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
 
   lcd.init();
@@ -390,13 +433,13 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("SMART PARKING");
   lcd.setCursor(0, 1);
-  lcd.print("Init PN532 NFC..");
+  lcd.print("2-GATE BARRIERS");
 
   // Khởi tạo module PN532
   nfc.begin();
   uint32_t versiondata = nfc.getFirmwareVersion();
   if (!versiondata) {
-    Serial.println("[PN532] CANH BAO: Khong tim thay module PN532! Kiem tra cong tac I2C (SEL0=ON, SEL1=OFF).");
+    Serial.println("[PN532] CANH BAO: Khong tim thay PN532! Kiem tra cong tac I2C (SEL0=ON, SEL1=OFF).");
   } else {
     Serial.print("[PN532] Tim thay chip PN5");
     Serial.println((versiondata >> 24) & 0xFF, HEX);
@@ -418,30 +461,39 @@ void setup() {
   }
 
   beep(2, 80);
-  readParkingSlotSensors();
+  readAllIrSensors();
   updateLcdDefaultScreen();
 }
 
 void loop() {
-  // 1. Đọc cảm biến IR tại 3 ô đỗ xe
-  readParkingSlotSensors();
+  // 1. Đọc 4 cảm biến hồng ngoại LM393
+  readAllIrSensors();
 
   // 2. Đọc thẻ NFC/RFID từ module PN532
   handlePn532Scan();
 
-  // 3. Nếu đang chờ Camera điện thoại kiểm tra biển số, hỏi kết quả từ Cloud
+  // 3. Kiểm tra kết quả đối chiếu biển số từ Camera điện thoại
   if (waitingForCameraVerify && millis() - lastCloudPoll >= CLOUD_POLL_INTERVAL_MS) {
     lastCloudPoll = millis();
     pollCameraVerificationResult();
   }
 
-  // 4. Đóng thanh chắn Barie tự động & an toàn
-  if (isGateOpen) {
-    bool vehicleAtGate = (digitalRead(IR_GATE_PIN) == LOW);
-    if (vehicleAtGate) {
-      gateOpenedTime = millis();
-    } else if (millis() - gateOpenedTime >= GATE_TIMEOUT_MS) {
-      closeGate();
+  // 4A. Tự động đóng Barie CỔNG VÀO (Servo #1 - GPIO 13) sau khi xe đi qua khỏi IR Cổng Vào (GPIO 25)
+  if (isGateInOpen) {
+    if (gateInSensorActive) {
+      gateInOpenedTime = millis();
+    } else if (millis() - gateInOpenedTime >= GATE_TIMEOUT_MS) {
+      closeGateIn();
+      syncSlotsToFirebase();
+    }
+  }
+
+  // 4B. Tự động đóng Barie CỔNG RA (Servo #2 - GPIO 14) sau khi xe đi qua khỏi IR Cổng Ra (GPIO 26)
+  if (isGateOutOpen) {
+    if (gateOutSensorActive) {
+      gateOutOpenedTime = millis();
+    } else if (millis() - gateOutOpenedTime >= GATE_TIMEOUT_MS) {
+      closeGateOut();
       syncSlotsToFirebase();
     }
   }
