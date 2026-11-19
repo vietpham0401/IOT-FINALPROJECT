@@ -1,0 +1,139 @@
+{
+  "version": 1,
+  "author": "Smart Parking IoT Project",
+  "editor": "wokwi",
+  "parts": [
+    {
+      "type": "wokwi-esp32-devkit-v1",
+      "id": "esp",
+      "top": 60,
+      "left": 210,
+      "attrs": {}
+    },
+    {
+      "type": "board-mfrc522",
+      "id": "rfid1",
+      "top": -110,
+      "left": -60,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd1",
+      "top": -110,
+      "left": 180,
+      "attrs": { "pins": "i2c" }
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "servo1",
+      "top": 60,
+      "left": 430,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-buzzer",
+      "id": "bz1",
+      "top": 210,
+      "left": 450,
+      "attrs": { "volume": "0.2" }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "sw_slot1",
+      "top": 120,
+      "left": -30,
+      "attrs": { "value": "1" }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "sw_slot2",
+      "top": 190,
+      "left": -30,
+      "attrs": { "value": "1" }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "sw_slot3",
+      "top": 260,
+      "left": -30,
+      "attrs": { "value": "1" }
+    },
+    {
+      "type": "wokwi-slide-switch",
+      "id": "sw_gate_ir",
+      "top": 330,
+      "left": -30,
+      "attrs": { "value": "1" }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "txt_rfid",
+      "top": -140,
+      "left": -65,
+      "attrs": { "text": "Bam vao RFID de chon The Quet" }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "txt_slot1",
+      "top": 95,
+      "left": -55,
+      "attrs": { "text": "IR O Do 1 (Gat Trai = Co xe)" }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "txt_slot2",
+      "top": 165,
+      "left": -55,
+      "attrs": { "text": "IR O Do 2 (Gat Trai = Co xe)" }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "txt_slot3",
+      "top": 235,
+      "left": -55,
+      "attrs": { "text": "IR O Do 3 (Gat Trai = Co xe)" }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "txt_gate",
+      "top": 305,
+      "left": -55,
+      "attrs": { "text": "IR Cong Barie (An toan)" }
+    }
+  ],
+  "connections": [
+    [ "rfid1:3.3V", "esp:3V3", "red", [ "v0" ] ],
+    [ "rfid1:GND", "esp:GND.1", "black", [ "v0" ] ],
+    [ "rfid1:SDA", "esp:D5", "purple", [ "v0" ] ],
+    [ "rfid1:SCK", "esp:D18", "yellow", [ "v0" ] ],
+    [ "rfid1:MOSI", "esp:D23", "blue", [ "v0" ] ],
+    [ "rfid1:MISO", "esp:D19", "green", [ "v0" ] ],
+    [ "rfid1:RST", "esp:D4", "orange", [ "v0" ] ],
+
+    [ "lcd1:GND", "esp:GND.1", "black", [ "h-20", "v180" ] ],
+    [ "lcd1:VCC", "esp:VIN", "red", [ "h-30", "v280" ] ],
+    [ "lcd1:SDA", "esp:D21", "blue", [ "h-10", "v150" ] ],
+    [ "lcd1:SCL", "esp:D22", "yellow", [ "h0", "v130" ] ],
+
+    [ "servo1:GND", "esp:GND.1", "black", [ "h-40", "v90" ] ],
+    [ "servo1:V+", "esp:VIN", "red", [ "h-50", "v140" ] ],
+    [ "servo1:PWM", "esp:D13", "orange", [ "h-30", "v100" ] ],
+
+    [ "bz1:1", "esp:GND.1", "black", [ "v20", "h-100" ] ],
+    [ "bz1:2", "esp:D27", "purple", [ "v30", "h-240" ] ],
+
+    [ "sw_slot1:1", "esp:GND.2", "black", [ "v0" ] ],
+    [ "sw_slot1:2", "esp:D32", "green", [ "v0" ] ],
+
+    [ "sw_slot2:1", "esp:GND.2", "black", [ "v0" ] ],
+    [ "sw_slot2:2", "esp:D33", "green", [ "v0" ] ],
+
+    [ "sw_slot3:1", "esp:GND.2", "black", [ "v0" ] ],
+    [ "sw_slot3:2", "esp:D25", "green", [ "v0" ] ],
+
+    [ "sw_gate_ir:1", "esp:GND.2", "black", [ "v0" ] ],
+    [ "sw_gate_ir:2", "esp:D26", "cyan", [ "v0" ] ]
+  ],
+  "dependencies": {}
+}

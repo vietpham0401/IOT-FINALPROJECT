@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Parking IoT - PN532 NFC & Phone Camera ALPR</title>
+  <link rel="stylesheet" href="style.css" />
+  <!-- Thư viện OCR Tesseract.js nhận diện biển số xe từ Camera điện thoại -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">P</div>
+      <div>
+        <h1>Smart Vehicle Parking IoT (PN532 + Camera ALPR)</h1>
+        <p>Xác thực 2 lớp: Thẻ từ NFC/RFID PN532 &amp; Nhận diện biển số bằng Camera điện thoại</p>
+      </div>
+    </div>
+    <div class="connection-box">
+      <span id="connBadge" class="badge badge-sim">Chế độ Mô phỏng (Simulator)</span>
+      <button id="btnConfigFirebase" class="btn btn-outline">Kết nối Firebase</button>
+    </div>
+  </header>
+
+  <!-- Modal cấu hình Firebase -->
+  <div id="firebaseModal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Kết nối Firebase Realtime Database</h3>
+      <p>Nhập URL Firebase Realtime Database của bạn (cùng URL đã nạp trong code ESP32):</p>
+      <input type="text" id="firebaseUrlInput" placeholder="https://your-project-id.firebasedatabase.app" />
+      <div class="modal-actions">
+        <button id="btnCancelModal" class="btn btn-outline">Đóng</button>
+        <button id="btnSaveFirebase" class="btn btn-primary">Lưu &amp; Kết nối</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="container">
+    <!-- Hàng thống kê tổng quan -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <span class="stat-label">Tổng số ô đỗ</span>
+        <strong class="stat-value" id="totalSlotsVal">3</strong>
+        <span class="stat-sub">Cảm biến hồng ngoại IR</span>
+      </div>
+      <div class="stat-card stat-free">
+        <span class="stat-label">Chỗ còn trống</span>
+        <strong class="stat-value" id="freeSlotsVal">3</strong>
+        <span class="stat-sub" id="parkingStateText">Sẵn sàng đón xe</span>
+      </div>
+      <div class="stat-card stat-occupied">
+        <span class="stat-label">Xe đang đỗ</span>
+        <strong class="stat-value" id="occupiedSlotsVal">0</strong>
+        <span class="stat-sub">Cập nhật thời gian thực</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">Trạng thái Barie (Servo)</span>
+        <strong class="stat-value gate-closed" id="gateStatusVal">ĐANG ĐÓNG (0°)</strong>
+        <div class="gate-actions">
+          <button id="btnToggleGate" class="btn btn-sm">Mở/Đóng Cổng Từ Xa</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- KHU VỰC MỚI: CAMERA ĐIỆN THOẠI NHẬN DIỆN & ĐỐI CHIẾU BIỂN SỐ (2FA ALPR) -->
+    <section class="panel camera-panel">
+      <div class="panel-header">
+        <div>
+          <h2>📸 Camera Điện Thoại Nhận Diện &amp; Đối Chiếu Biển Số (2-Factor Verification)</h2>
+          <span class="hint">Đối chiếu biển số xe từ Camera điện thoại với biển số đăng ký trên thẻ PN532 trước khi mở Barie</span>
+        </div>
+        <div class="camera-mode-controls">
+          <button id="btnStartWebCam" class="btn btn-primary btn-sm">📱 Bật Camera Điện Thoại / Webcam</button>
+          <button id="btnUseIpCam" class="btn btn-outline btn-sm">🌐 Dùng IP Webcam App</button>
+        </div>
+      </div>
+
+      <!-- Ô nhập URL IP Webcam nếu dùng app IP Webcam trên Android/iOS -->
+      <div id="ipCamConfigBar" class="ipcam-bar hidden">
+        <input type="text" id="ipCamUrlInput" placeholder="Nhập link IP Webcam ĐT (VD: http://192.168.1.15:8080/shot.jpg)" />
+        <button id="btnConnectIpCam" class="btn btn-primary btn-sm">Kết nối Camera ĐT</button>
+      </div>
+
+      <div class="alpr-grid">
+        <!-- Khung hình Camera trực tiếp -->
+        <div class="camera-viewport-wrap">
+          <div class="camera-viewport">
+            <video id="cameraVideo" autoplay playsinline muted></video>
+            <img id="ipCamImage" class="hidden" crossorigin="anonymous" alt="IP Camera Stream" />
+            <canvas id="captureCanvas" class="hidden"></canvas>
+            <div class="plate-target-box">
+              <span>Đưa biển số xe vào khung này</span>
+            </div>
+          </div>
+          <div class="camera-actions">
+            <button id="btnScanOcr" class="btn btn-success">🔍 Chụp &amp; Đọc Biển Số Bằng AI (OCR)</button>
+            <span id="ocrStatusText" class="ocr-status">Sẵn sàng quét OCR</span>
+          </div>
+        </div>
+
+        <!-- Bảng đối chiếu Thẻ PN532 vs Biển Số Camera -->
+        <div class="verification-card">
+          <h3>Bảng Đối Chiếu Xác Thực 2 Lớp (PN532 + Camera)</h3>
+
+          <div class="compare-row">
+            <div class="compare-box">
+              <span class="compare-label">1. Thẻ PN532 vừa quẹt</span>
+              <strong id="verifyCardUid" class="compare-uid">Chưa quẹt thẻ</strong>
+              <span id="verifyCardOwner" class="compare-sub">Chủ xe: ---</span>
+              <div class="expected-plate-tag">
+                Biển số đăng ký thẻ: <strong id="expectedPlateVal">---</strong>
+              </div>
+            </div>
+
+            <div class="compare-vs">VS</div>
+
+            <div class="compare-box">
+              <span class="compare-label">2. Biển số Camera đọc được</span>
+              <strong id="detectedPlateVal" class="compare-plate">---</strong>
+              <span class="compare-sub">Có thể sửa/nhập biển số để test:</span>
+              <div class="manual-plate-input">
+                <input type="text" id="manualPlateInput" placeholder="VD: 29A-123.45" />
+                <button id="btnVerifyPlateNow" class="btn btn-primary btn-sm">Đối chiếu ngay</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Kết quả đối chiếu -->
+          <div id="matchResultBanner" class="match-banner match-idle">
+            ⏳ Bước 1: Hãy quẹt thẻ PN532 (hoặc bấm nút giả lập quẹt thẻ bên dưới) → Bước 2: Quét biển số qua Camera để mở cổng.
+          </div>
+
+          <!-- Nút test nhanh tình huống Đúng biển số / Sai biển số khi thuyết trình -->
+          <div class="quick-demo-bar">
+            <span>Test nhanh khi thuyết trình:</span>
+            <button id="btnSimMatch" class="btn btn-sm btn-outline-green">✅ Giả lập Camera thấy ĐÚNG biển số</button>
+            <button id="btnSimMismatch" class="btn btn-sm btn-outline-red">🚨 Giả lập Camera thấy SAI biển số (Xe gian)</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="main-grid">
+      <!-- Sơ đồ bãi đỗ xe trực quan -->
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Sơ Đồ Bãi Đỗ Xe Thời Gian Thực (Live Map)</h2>
+          <span class="hint">Bấm vào từng ô đỗ để giả lập cảm biến IR phát hiện xe</span>
+        </div>
+
+        <div class="parking-map">
+          <div class="gate-zone">
+            <div class="rfid-reader-box">
+              <span class="rfid-title">Đầu đọc NFC/RFID PN532 (I2C: 0x24)</span>
+              <span id="lastScannedUid" class="rfid-uid">Chờ quẹt thẻ...</span>
+            </div>
+            <div class="barrier-arm-wrap">
+              <div id="barrierArm" class="barrier-arm closed"></div>
+              <span class="barrier-label">Thanh chắn Servo SG90</span>
+            </div>
+          </div>
+
+          <div class="slots-row" id="slotsContainer">
+            <!-- Render bằng JS -->
+          </div>
+        </div>
+
+        <!-- Bộ giả lập quẹt thẻ PN532 nhanh ngay trên Web -->
+        <div class="sim-controls">
+          <h3>Bước 1: Mô Phỏng Quẹt Thẻ PN532 (Khớp mã UID trên ESP32 &amp; Wokwi)</h3>
+          <div class="sim-buttons">
+            <button class="btn btn-valid" data-uid="01 02 03 04">
+              Quẹt thẻ Xe 1 (UID: 01 02 03 04 → Biển: 29A-123.45)
+            </button>
+            <button class="btn btn-valid" data-uid="11 22 33 44">
+              Quẹt thẻ Xe 2 (UID: 11 22 33 44 → Biển: 30F-678.90)
+            </button>
+            <button class="btn btn-valid" data-uid="55 66 77 88">
+              Quẹt thẻ Xe 3 (UID: 55 66 77 88 → Biển: 51G-888.88)
+            </button>
+            <button class="btn btn-danger" data-uid="AA BB CC DD">
+              Quẹt thẻ Lạ (UID: AA BB CC DD → Từ chối ngay!)
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Lịch sử quẹt thẻ & đối chiếu biển số -->
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Nhật Ký Kiểm Soát Ra/Vào (PN532 + Camera Logs)</h2>
+          <button id="btnClearLogs" class="btn btn-outline btn-sm">Xóa lịch sử</button>
+        </div>
+        <div class="table-wrap">
+          <table class="log-table">
+            <thead>
+              <tr>
+                <th>Thời gian</th>
+                <th>UID Thẻ PN532</th>
+                <th>Biển số Thẻ vs Camera</th>
+                <th>Kết quả</th>
+              </tr>
+            </thead>
+            <tbody id="logTableBody">
+              <!-- Render bằng JS -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
